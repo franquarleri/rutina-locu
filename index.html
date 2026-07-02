@@ -175,8 +175,10 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,sans-serif;ba
   <div class="ulist" id="ulist"></div>
   <div class="uadd">
     <input class="uinp" id="uninp" placeholder="Nuevo usuario..." maxlength="20">
+    <input class="uinp" id="upin" placeholder="PIN" maxlength="4" inputmode="numeric" pattern="[0-9]*" style="flex:0 0 64px;text-align:center">
     <button class="ubtn" onclick="addUser()">+ Añadir</button>
   </div>
+  <div style="text-align:center;color:var(--dim);font-size:11px;margin-top:8px;max-width:360px">El PIN protege tu perfil y te permite recuperarlo en otro celular</div>
 </div>
 
 <div class="app" id="app">
@@ -248,8 +250,23 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,sans-serif;ba
 
 <div class="toast" id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 'use strict';
+try{
+  firebase.initializeApp({
+    apiKey: "AIzaSyCKeTCMdvZmqcv281_vgH_adpjf3CET52c",
+    authDomain: "rutina-locu.firebaseapp.com",
+    projectId: "rutina-locu",
+    storageBucket: "rutina-locu.firebasestorage.app",
+    messagingSenderId: "510998632156",
+    appId: "1:510998632156:web:5c1fd94798323610f20619"
+  });
+  var auth=firebase.auth();
+  var db=firebase.firestore();
+}catch(e){var auth=null,db=null;}
 function parseSets(s){s=String(s).trim().toUpperCase().replace(/\s+/g,'');if(/^\d+(-\d+)+$/.test(s))return s.split('-').map(Number);var m=s.match(/^(\d+)[X×](.+)$/);if(m){var n=+m[1],r=isNaN(+m[2])?m[2]:+m[2];return Array(n).fill(r);}if(/^\d+$/.test(s))return[+s];return[s];}
 function td(){return new Date().toLocaleDateString('es-AR');}
 
@@ -350,18 +367,65 @@ function renderUsers(){
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function escQ(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 
+function getPins(){try{return JSON.parse(localStorage.getItem('rl_pins')||'{}');}catch{return{};}}
+function savePins(p){localStorage.setItem('rl_pins',JSON.stringify(p));}
+function slugName(name){var s=name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');return s||'u'+Date.now();}
+function emailFor(name){return slugName(name)+'@rutinalocu.app';}
+function passFor(pin){return 'rl-'+pin;}
+
+function cloudPull(uid,name){
+  if(!db)return Promise.resolve();
+  return db.collection('users').doc(uid).get().then(function(snap){
+    if(snap.exists&&snap.data().payload)localStorage.setItem('rl_'+name,snap.data().payload);
+  }).catch(function(){});
+}
+var _pushTimer=null;
+function cloudPush(){
+  if(!auth||!db)return;
+  var u=auth.currentUser;
+  if(!u||u.email!==emailFor(CU))return;
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(function(){
+    db.collection('users').doc(u.uid).set({
+      payload: localStorage.getItem('rl_'+CU)||'{}',
+      name: CU,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function(){});
+  },800);
+}
+
 function addUser(){
   var inp=document.getElementById('uninp'),name=inp.value.trim();
+  var pinInp=document.getElementById('upin'),pin=pinInp.value.trim();
   if(!name)return;
+  if(!/^\d{4}$/.test(pin)){showToast('El PIN debe tener 4 dígitos');return;}
   var us=getUsers();
-  if(us.includes(name)){showToast('Ya existe ese usuario');return;}
-  us.push(name);saveUsers(us);inp.value='';renderUsers();
+  if(us.includes(name)){showToast('Ya existe ese usuario en este celular');return;}
+  if(!auth){us.push(name);saveUsers(us);inp.value='';pinInp.value='';renderUsers();return;}
+  var email=emailFor(name),pass=passFor(pin);
+  auth.signInWithEmailAndPassword(email,pass).then(function(cred){
+    us.push(name);saveUsers(us);
+    var pins=getPins();pins[name]=pin;savePins(pins);
+    inp.value='';pinInp.value='';
+    cloudPull(cred.user.uid,name).then(function(){showToast('Perfil recuperado ✅');renderUsers();});
+  }).catch(function(){
+    auth.createUserWithEmailAndPassword(email,pass).then(function(){
+      us.push(name);saveUsers(us);
+      var pins=getPins();pins[name]=pin;savePins(pins);
+      inp.value='';pinInp.value='';renderUsers();
+    }).catch(function(err2){
+      if(err2.code==='auth/email-already-in-use')showToast('Ese nombre ya está usado con otro PIN');
+      else showToast('No se pudo crear el perfil (¿sin conexión?)');
+    });
+  });
 }
 
 function delUser(name,btn){
   if(btn.dataset.c!=='1'){btn.dataset.c='1';btn.textContent='¿Seguro?';btn.style.background='rgba(255,59,48,.4)';setTimeout(function(){btn.dataset.c='';btn.textContent='Eliminar';btn.style.background='';},3000);return;}
   var us=getUsers().filter(function(u){return u!==name;});
-  saveUsers(us);localStorage.removeItem('rl_'+name);renderUsers();
+  saveUsers(us);localStorage.removeItem('rl_'+name);
+  var pins=getPins();delete pins[name];savePins(pins);
+  renderUsers();
 }
 
 function selectUser(name){
@@ -370,6 +434,18 @@ function selectUser(name){
   document.getElementById('app').classList.add('show');
   document.getElementById('userbtn').textContent='👤 '+name;
   initApp();
+  cloudSignInSilently(name);
+}
+
+function cloudSignInSilently(name){
+  if(!auth)return;
+  var pin=getPins()[name];
+  if(!pin)return;
+  auth.signInWithEmailAndPassword(emailFor(name),passFor(pin)).then(function(cred){
+    return cloudPull(cred.user.uid,name).then(function(){
+      if(CU===name){DIAS.forEach(renderDay);renderPot();var st=gst();document.getElementById('streakN').textContent=st.streak||0;}
+    });
+  }).catch(function(){});
 }
 
 function showUsers(){
@@ -380,7 +456,7 @@ function showUsers(){
 
 /* ===== STORAGE ===== */
 function gst(){try{return JSON.parse(localStorage.getItem('rl_'+CU)||'{}')}catch{return{}}}
-function sst(d){try{localStorage.setItem('rl_'+CU,JSON.stringify(d))}catch{}}
+function sst(d){try{localStorage.setItem('rl_'+CU,JSON.stringify(d))}catch{}cloudPush();}
 function gTod(id){var st=gst(),t=td();return(st.today&&st.today[t]&&st.today[t][id])||{};}
 function sSd(id,i,data){var st=gst(),t=td();if(!st.today)st.today={};if(!st.today[t])st.today[t]={};if(!st.today[t][id])st.today[t][id]={};st.today[t][id][i]=Object.assign({},st.today[t][id][i]||{},data);sst(st);}
 function gHist(id){return(gst().hist||{})[id]||[];}
