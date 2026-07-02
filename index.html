@@ -24,10 +24,10 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,sans-serif;ba
 .uava{width:38px;height:38px;border-radius:50%;background:var(--dc);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#000;flex-shrink:0}
 .uname{font-size:15px;font-weight:700;flex:1;color:var(--tx)}
 .udel{padding:6px 11px;border:none;background:rgba(255,59,48,.15);color:#ff3b30;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;transition:background .2s}
-.uadd{display:flex;gap:8px;width:100%;max-width:360px}
-.uinp{flex:1;background:var(--s1);border:1px solid var(--bo);border-radius:10px;padding:12px 14px;color:var(--tx);font-size:14px;outline:none}
+.uadd{display:flex;gap:8px;width:100%;max-width:360px;flex-wrap:wrap}
+.uinp{flex:1;min-width:0;background:var(--s1);border:1px solid var(--bo);border-radius:10px;padding:12px 14px;color:var(--tx);font-size:14px;outline:none}
 .uinp:focus{border-color:var(--dc)}
-.ubtn{padding:12px 18px;border-radius:10px;border:none;background:var(--dc);color:#000;font-size:14px;font-weight:800;cursor:pointer}
+.ubtn{padding:12px 18px;border-radius:10px;border:none;background:var(--dc);color:#000;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap;flex-shrink:0}
 /* APP */
 .app{display:none}
 .app.show{display:block}
@@ -451,6 +451,7 @@ function cloudSignInSilently(name){
 function showUsers(){
   document.getElementById('app').classList.remove('show');
   document.getElementById('umodal').classList.remove('hide');
+  document.documentElement.style.setProperty('--dc','#00e676');
   renderUsers();
 }
 
